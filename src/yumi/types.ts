@@ -111,7 +111,19 @@ export interface RawCartResponse {
   message?: string;
 }
 
+export interface RawWishlistItem {
+  id: number;
+  product: RawProduct;
+  options: unknown;
+}
+
 /** Normalized shapes exposed by YumiClient. */
+
+export interface WishlistItem {
+  /** Wishlist entry id (for remove / move-to-cart), not the product id. */
+  wishlistId: number;
+  product: Product;
+}
 
 export interface TierPrice {
   minQty: number;

@@ -56,6 +56,11 @@ npm run test:live  # e2e-тести на живому сайті (кошик п�
 | `get_category_filters` | Фільтри категорії (колір, розмір, виробник) з id опцій |
 | `get_cart` | Кошик із сумами та прогресом до безкоштовної доставки |
 | `add_to_cart` / `update_cart_item` / `remove_cart_item` | Керування кошиком |
+| `move_cart_item_to_wishlist` | Перенести рядок кошика у список бажань |
+| `get_wishlist` | Список бажань (поточні ціни й наявність) |
+| `add_to_wishlist` | Додати товар у список бажань (повторний виклик нічого не ламає) |
+| `remove_from_wishlist` | Видалити запис зі списку бажань |
+| `move_wishlist_item_to_cart` | Перенести запис зі списку бажань у кошик |
 | `auth_status` | Чи активна сесія акаунта |
 | `login_send_code` / `login_verify_code` | Вхід: код на пошту → підтвердження |
 | `list_orders` | Історія замовлень (номер, дата, статус, сума) |
@@ -97,6 +102,11 @@ claude mcp add yumi-market -- node C:/projects/yumi-api/dist/mcp/server.js
 | POST | `/cart/items` `{ productId, quantity }` | Додати товар |
 | PATCH | `/cart/items/:itemId` `{ quantity }` | Змінити кількість |
 | DELETE | `/cart/items/:itemId` | Видалити рядок |
+| POST | `/cart/items/:itemId/move-to-wishlist` | Перенести рядок у список бажань |
+| GET | `/wishlist` | Список бажань |
+| POST | `/wishlist` `{ productId }` | Додати у список бажань |
+| DELETE | `/wishlist/:wishlistId` | Видалити зі списку бажань |
+| POST | `/wishlist/:wishlistId/move-to-cart` `{ quantity? }` | Перенести у кошик |
 | GET | `/auth/status` | Чи виконано вхід |
 | POST | `/auth/login/send` `{ email }` | Надіслати код входу на пошту |
 | POST | `/auth/login/verify` `{ code }` | Підтвердити код |

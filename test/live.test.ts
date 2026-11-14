@@ -19,6 +19,7 @@ const tsxCli = fileURLToPath(new URL("../node_modules/tsx/dist/cli.mjs", import.
 let client: Client;
 let loggedIn = false;
 let initialCartItemIds = new Set<number>();
+let initialWishlistProductIds = new Set<number>();
 
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -39,6 +40,15 @@ async function callError(name: string, args: Record<string, unknown>): Promise<s
   return r.content[0].text;
 }
 
+/** Remove wishlist entries that were not there before the tests. */
+async function cleanupWishlist() {
+  if (!loggedIn) return;
+  const w = await call("get_wishlist");
+  for (const item of w.items) {
+    if (!initialWishlistProductIds.has(item.productId)) await call("remove_from_wishlist", { wishlistId: item.wishlistId });
+  }
+}
+
 /** Remove cart lines that were not there before the tests. */
 async function cleanupCart() {
   const cart = await call("get_cart");
@@ -56,10 +66,15 @@ before(async () => {
   loggedIn = (await call("auth_status")).loggedIn;
   const cart = await call("get_cart");
   initialCartItemIds = new Set(cart.items.map((i: Json) => i.itemId));
+  if (loggedIn) {
+    const w = await call("get_wishlist");
+    initialWishlistProductIds = new Set(w.items.map((i: Json) => i.productId));
+  }
 });
 
 after(async () => {
   await cleanupCart().catch(() => undefined);
+  await cleanupWishlist().catch(() => undefined);
   await client?.close();
 });
 
@@ -70,6 +85,7 @@ describe("MCP: tools", () => {
       "search_products", "get_product", "find_by_sku", "list_categories", "get_category_filters",
       "get_cart", "add_to_cart", "update_cart_item", "remove_cart_item",
       "auth_status", "login_send_code", "login_verify_code", "list_orders", "get_order", "reorder",
+      "get_wishlist", "add_to_wishlist", "remove_from_wishlist", "move_wishlist_item_to_cart", "move_cart_item_to_wishlist",
     ]) assert.ok(names.includes(n), `missing tool ${n}`);
   });
 });
@@ -257,6 +273,75 @@ describe("Orders (signed in)", () => {
     await cleanupCart();
     const after = await call("get_cart");
     assert.equal(after.items.filter((i: Json) => !initialCartItemIds.has(i.itemId)).length, 0);
+  });
+});
+
+describe("Wishlist (signed in)", () => {
+  let products: Json[] = [];
+
+  before(async () => {
+    if (!loggedIn) return;
+    const r = await call("search_products", { query: "бантик", limit: 48 });
+    products = r.items.filter((p: Json) => p.saleable && !initialWishlistProductIds.has(p.id)).slice(0, 3);
+  });
+
+  test("get_wishlist returns entries with product data", async (t) => {
+    if (!loggedIn) return t.skip("not signed in");
+    const w = await call("get_wishlist");
+    assert.equal(w.count, w.items.length);
+    for (const i of w.items) assert.ok(i.wishlistId && i.productId && i.name && i.price >= 0);
+  });
+
+  test("add_to_wishlist adds and is idempotent", async (t) => {
+    if (!loggedIn) return t.skip("not signed in");
+    const p = products[0];
+    const r1 = await call("add_to_wishlist", { productId: p.id });
+    assert.equal(r1.added, true);
+    assert.ok(r1.wishlist.items.some((i: Json) => i.productId === p.id));
+    const r2 = await call("add_to_wishlist", { productId: p.id });
+    assert.equal(r2.added, false, "second add must not toggle it off");
+    assert.ok(r2.wishlist.items.some((i: Json) => i.productId === p.id), "item disappeared after second add");
+  });
+
+  test("remove_from_wishlist removes only that entry", async (t) => {
+    if (!loggedIn) return t.skip("not signed in");
+    const p = products[0];
+    const before = await call("get_wishlist");
+    const entry = before.items.find((i: Json) => i.productId === p.id);
+    const r = await call("remove_from_wishlist", { wishlistId: entry.wishlistId });
+    assert.ok(!r.wishlist.items.some((i: Json) => i.productId === p.id));
+    assert.equal(r.wishlist.count, before.count - 1);
+  });
+
+  test("move_wishlist_item_to_cart puts it in the cart", async (t) => {
+    if (!loggedIn) return t.skip("not signed in");
+    const p = products[1];
+    await call("add_to_wishlist", { productId: p.id });
+    const entry = (await call("get_wishlist")).items.find((i: Json) => i.productId === p.id);
+    const r = await call("move_wishlist_item_to_cart", { wishlistId: entry.wishlistId, quantity: 2 });
+    const line = r.cart.items.find((i: Json) => i.urlKey === p.urlKey);
+    assert.ok(line, "not in cart");
+    assert.equal(line.quantity, 2);
+    await cleanupCart();
+    await cleanupWishlist();
+  });
+
+  test("move_cart_item_to_wishlist moves a cart line", async (t) => {
+    if (!loggedIn) return t.skip("not signed in");
+    const p = products[2];
+    const added = await call("add_to_cart", { productId: p.id, quantity: 1 });
+    const line = added.cart.items.find((i: Json) => i.urlKey === p.urlKey);
+    const r = await call("move_cart_item_to_wishlist", { itemId: line.itemId });
+    assert.ok(!r.cart.items.some((i: Json) => i.itemId === line.itemId), "still in cart");
+    const w = await call("get_wishlist");
+    assert.ok(w.items.some((i: Json) => i.productId === p.id), "not in wishlist");
+    await cleanupWishlist();
+  });
+
+  test("wishlist is back to its original state", async (t) => {
+    if (!loggedIn) return t.skip("not signed in");
+    const w = await call("get_wishlist");
+    assert.deepEqual(new Set(w.items.map((i: Json) => i.productId)), initialWishlistProductIds);
   });
 });
 

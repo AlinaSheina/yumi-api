@@ -14,8 +14,10 @@ import type {
   RawProduct,
   RawProductList,
   RawTierPrice,
+  RawWishlistItem,
   SearchParams,
   TierPrice,
+  WishlistItem,
 } from "./types.js";
 
 export { YumiHttpError };
@@ -195,6 +197,57 @@ export class YumiClient {
       cart_item_id: cartItemId,
     });
     return { message: res.message, cart: this.toCart(res.data) };
+  }
+
+  /** Move a cart line to the wishlist (removes it from the cart). Requires sign-in. */
+  async moveCartItemToWishlist(cartItemId: number): Promise<{ message?: string; cart: Cart }> {
+    const cart = await this.getCart();
+    const line = cart.items.find((i) => i.itemId === cartItemId);
+    if (!line) throw new Error(`Cart item ${cartItemId} not found`);
+    const res = await this.http.sendJson<RawCartResponse>("POST", "/api/checkout/cart/move-to-wishlist", {
+      ids: [cartItemId],
+      qty: [line.quantity],
+    });
+    return { message: res.message, cart: this.toCart(res.data) };
+  }
+
+  // ---------- Wishlist (requires sign-in) ----------
+
+  async getWishlist(): Promise<WishlistItem[]> {
+    const res = await this.http.getJson<{ data: RawWishlistItem[] }>("/api/customer/wishlist");
+    return res.data.map((w) => ({ wishlistId: w.id, product: this.toProduct(w.product) }));
+  }
+
+  /**
+   * Add a product to the wishlist. The site's endpoint toggles, so we check first
+   * and never remove an item that is already there.
+   */
+  async addToWishlist(productId: number): Promise<{ added: boolean; message: string; wishlist: WishlistItem[] }> {
+    const before = await this.getWishlist();
+    if (before.some((w) => w.product.id === productId)) {
+      return { added: false, message: "Товар вже у списку бажань", wishlist: before };
+    }
+    const res = await this.http.sendJson<{ message?: string }>("POST", "/api/customer/wishlist", { product_id: productId });
+    const after = await this.getWishlist();
+    const added = after.some((w) => w.product.id === productId);
+    if (!added) throw new Error(`Product ${productId} was not added to the wishlist${res?.message ? `: ${res.message}` : ""}`);
+    return { added, message: res?.message ?? "Додано до списку бажань", wishlist: after };
+  }
+
+  async removeFromWishlist(wishlistId: number): Promise<{ message?: string; wishlist: WishlistItem[] }> {
+    const res = await this.http.sendJson<{ message?: string }>("DELETE", `/api/customer/wishlist/${wishlistId}`, {});
+    return { message: res?.message, wishlist: await this.getWishlist() };
+  }
+
+  /** Move a wishlist entry into the cart with the given quantity. */
+  async moveWishlistItemToCart(wishlistId: number, quantity = 1): Promise<{ message?: string; cart: Cart }> {
+    const item = (await this.getWishlist()).find((w) => w.wishlistId === wishlistId);
+    if (!item) throw new Error(`Wishlist item ${wishlistId} not found`);
+    const res = await this.http.sendJson<{ message?: string }>("POST", `/api/customer/wishlist/${wishlistId}/move-to-cart`, {
+      quantity,
+      product_id: item.product.id,
+    });
+    return { message: res?.message, cart: await this.getCart() };
   }
 
   // ---------- Account ----------

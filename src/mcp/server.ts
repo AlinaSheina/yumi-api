@@ -6,7 +6,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { createClientFromEnv, YumiHttpError, type Cart, type RawCategoryTreeNode } from "../yumi/index.js";
+import {
+  createClientFromEnv,
+  YumiHttpError,
+  type Cart,
+  type RawCategoryTreeNode,
+  type WishlistItem,
+} from "../yumi/index.js";
 
 const yumi = createClientFromEnv();
 
@@ -193,6 +199,92 @@ server.registerTool(
   ({ itemId }) =>
     run(async () => {
       const r = await yumi.removeCartItem(itemId);
+      return { message: r.message, cart: cartSummary(r.cart) };
+    }),
+);
+
+server.registerTool(
+  "move_cart_item_to_wishlist",
+  {
+    title: "З кошика у список бажань",
+    description: "Move a cart line (itemId from get_cart) to the wishlist; it is removed from the cart. Requires sign-in.",
+    inputSchema: { itemId: z.number().int() },
+  },
+  ({ itemId }) =>
+    run(async () => {
+      const r = await yumi.moveCartItemToWishlist(itemId);
+      return { message: r.message, cart: cartSummary(r.cart) };
+    }),
+);
+
+// ---------- Wishlist (require sign-in) ----------
+
+function wishlistSummary(items: WishlistItem[]) {
+  return {
+    count: items.length,
+    items: items.map((w) => ({
+      wishlistId: w.wishlistId,
+      productId: w.product.id,
+      sku: w.product.sku,
+      name: w.product.name,
+      price: w.product.price,
+      tierPrices: w.product.tierPrices,
+      inStock: w.product.inStock,
+      saleable: w.product.saleable,
+      url: w.product.url,
+    })),
+  };
+}
+
+server.registerTool(
+  "get_wishlist",
+  {
+    title: "Список бажань",
+    description: "The signed-in customer's wishlist: wishlistId, productId, SKU, name, current price, stock.",
+    inputSchema: {},
+  },
+  () => run(async () => wishlistSummary(await yumi.getWishlist())),
+);
+
+server.registerTool(
+  "add_to_wishlist",
+  {
+    title: "Додати у список бажань",
+    description:
+      "Add a product (productId from search_products) to the wishlist. Safe to repeat: an item already in the wishlist stays there.",
+    inputSchema: { productId: z.number().int() },
+  },
+  ({ productId }) =>
+    run(async () => {
+      const r = await yumi.addToWishlist(productId);
+      return { added: r.added, message: r.message, wishlist: wishlistSummary(r.wishlist) };
+    }),
+);
+
+server.registerTool(
+  "remove_from_wishlist",
+  {
+    title: "Видалити зі списку бажань",
+    description: "Remove one entry from the wishlist (wishlistId from get_wishlist, not the product id).",
+    inputSchema: { wishlistId: z.number().int() },
+  },
+  ({ wishlistId }) =>
+    run(async () => {
+      const r = await yumi.removeFromWishlist(wishlistId);
+      return { message: r.message, wishlist: wishlistSummary(r.wishlist) };
+    }),
+);
+
+server.registerTool(
+  "move_wishlist_item_to_cart",
+  {
+    title: "Зі списку бажань у кошик",
+    description: "Move a wishlist entry (wishlistId from get_wishlist) into the cart with the given quantity.",
+    inputSchema: { wishlistId: z.number().int(), quantity: z.number().int().min(1).optional() },
+  },
+  ({ wishlistId, quantity }) =>
+    run(async () => {
+      const r = await yumi.moveWishlistItemToCart(wishlistId, quantity ?? 1);
       return { message: r.message, cart: cartSummary(r.cart) };
     }),
 );

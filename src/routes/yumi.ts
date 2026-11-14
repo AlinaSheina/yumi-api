@@ -97,6 +97,37 @@ export function yumiRouter(yumi: YumiClient) {
   );
 
   r.delete("/cart/items/:itemId", wrap((req) => yumi.removeCartItem(intParam(req, "itemId"))));
+  r.post("/cart/items/:itemId/move-to-wishlist", wrap((req) => yumi.moveCartItemToWishlist(intParam(req, "itemId"))));
+
+  // ----- Wishlist -----
+
+  r.get("/wishlist", wrap(() => yumi.getWishlist()));
+
+  // POST /wishlist { productId }
+  r.post(
+    "/wishlist",
+    wrap(async (req) => {
+      const productId = req.body?.productId;
+      if (!Number.isInteger(productId)) {
+        throw Object.assign(new Error("productId (integer) is required"), { status: 400 });
+      }
+      return yumi.addToWishlist(productId);
+    }),
+  );
+
+  r.delete("/wishlist/:wishlistId", wrap((req) => yumi.removeFromWishlist(intParam(req, "wishlistId"))));
+
+  // POST /wishlist/:wishlistId/move-to-cart { quantity? }
+  r.post(
+    "/wishlist/:wishlistId/move-to-cart",
+    wrap(async (req) => {
+      const quantity = req.body?.quantity ?? 1;
+      if (!Number.isInteger(quantity) || quantity < 1) {
+        throw Object.assign(new Error("quantity must be a positive integer"), { status: 400 });
+      }
+      return yumi.moveWishlistItemToCart(intParam(req, "wishlistId"), quantity);
+    }),
+  );
 
   // ----- Account -----
 
