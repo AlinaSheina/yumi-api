@@ -82,7 +82,7 @@ describe("MCP: tools", () => {
   test("exposes all expected tools", async () => {
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     for (const n of [
-      "search_products", "get_product", "find_by_sku", "list_categories", "get_category_filters",
+      "search_products", "get_product", "get_product_images", "find_by_sku", "list_categories", "get_category_filters",
       "get_cart", "add_to_cart", "update_cart_item", "remove_cart_item",
       "auth_status", "login_send_code", "login_verify_code", "list_orders", "get_order", "reorder",
       "get_wishlist", "add_to_wishlist", "remove_from_wishlist", "move_wishlist_item_to_cart", "move_cart_item_to_wishlist",
@@ -173,6 +173,43 @@ describe("Catalog", () => {
     assert.equal(card.sku, p.sku);
     assert.ok(card.description && card.description.length > 10, "no description");
     assert.equal(card.listing.price, p.price);
+  });
+
+  test("get_product includes the photo gallery", async () => {
+    const card = await call("get_product", { urlKey: "gemar-dz-13-gb120-089-xrom-sribnii-shiny-silver" });
+    assert.ok(card.images.length >= 1, "no images");
+    for (const img of card.images) {
+      for (const s of ["small", "medium", "large", "original"]) assert.match(img[s], /^https:\/\/yumi\.market\/.+\.(webp|jpe?g|png)$/);
+    }
+  });
+
+  test("get_product_images returns viewable images (by urlKey and by SKU)", async () => {
+    const r = (await client.callTool({
+      name: "get_product_images",
+      arguments: { urlKey: "gemar-dz-13-gb120-089-xrom-sribnii-shiny-silver", max: 2 },
+    })) as { isError?: boolean; content: Array<{ type: string; data?: string; mimeType?: string; text?: string }> };
+    assert.ok(!r.isError, r.content[0].text);
+    const images = r.content.filter((c) => c.type === "image");
+    assert.equal(images.length, 2);
+    for (const img of images) {
+      assert.match(img.mimeType!, /^image\//);
+      const bytes = Buffer.from(img.data!, "base64");
+      assert.ok(bytes.length > 500, "image too small");
+      if (img.mimeType === "image/webp") assert.equal(bytes.subarray(8, 12).toString("ascii"), "WEBP");
+    }
+    const info = JSON.parse(r.content[0].text!);
+    assert.ok(info.totalImages >= 2 && info.name);
+
+    const bySku = (await client.callTool({ name: "get_product_images", arguments: { sku: "73712", max: 1, size: "small" } })) as {
+      isError?: boolean;
+      content: Array<{ type: string }>;
+    };
+    assert.ok(!bySku.isError);
+    assert.equal(bySku.content.filter((c) => c.type === "image").length, 1);
+  });
+
+  test("get_product_images needs a product reference", async () => {
+    assert.match(await callError("get_product_images", {}), /urlKey or sku/);
   });
 
   test("unknown SKU and product are handled", async () => {
@@ -376,6 +413,23 @@ describe("REST API", () => {
     assert.equal((await patch.json()).cart.items.find((i: Json) => i.itemId === line.itemId).quantity, 4);
     const del = await fetch(`${base}/cart/items/${line.itemId}`, { method: "DELETE" });
     assert.equal(del.status, 200);
+  });
+
+  test("GET /catalog/products/:urlKey/images and /image", async () => {
+    const key = "gemar-dz-13-gb120-089-xrom-sribnii-shiny-silver";
+    const list = await (await fetch(`${base}/catalog/products/${key}/images`)).json();
+    assert.ok(list.images.length >= 1);
+    const img = await fetch(`${base}/catalog/products/${key}/image?index=1&size=medium`);
+    assert.equal(img.status, 200);
+    assert.match(img.headers.get("content-type") ?? "", /^image\//);
+    assert.ok((await img.arrayBuffer()).byteLength > 500);
+    assert.equal((await fetch(`${base}/catalog/products/${key}/image?index=99`)).status, 404);
+    assert.equal((await fetch(`${base}/catalog/products/${key}/image?size=huge`)).status, 400);
+  });
+
+  test("image download refuses other hosts", async () => {
+    const { createClientFromEnv } = await import("../src/yumi/index.js");
+    await assert.rejects(createClientFromEnv().downloadImage("https://example.com/a.webp"), /Refusing/);
   });
 
   test("validation errors return 400", async () => {

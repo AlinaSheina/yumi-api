@@ -98,6 +98,49 @@ server.registerTool(
 );
 
 server.registerTool(
+  "get_product_images",
+  {
+    title: "Фото товару",
+    description:
+      "Photos of a product (by urlKey/product URL or SKU) returned as images the assistant can see and show, " +
+      "plus links to every size. Use when the user wants to see what a product looks like.",
+    inputSchema: {
+      urlKey: z.string().optional().describe("Product URL key or full URL (from search_products)"),
+      sku: z.string().optional().describe("Product SKU (артикул)"),
+      size: z.enum(["small", "medium", "large", "original"]).optional().describe("Default 'large'"),
+      max: z.number().int().min(1).max(10).optional().describe("How many gallery photos to return (default 3)"),
+    },
+  },
+  async ({ urlKey, sku, size, max }) => {
+    try {
+      if (!urlKey && !sku) throw new Error("Pass urlKey or sku");
+      const g = await yumi.getProductImages({ urlKey, sku });
+      if (!g.images.length) return ok({ name: g.name, url: g.url, images: [], note: "Товар без фото" });
+      const chosen = g.images.slice(0, max ?? 3);
+      const content: Array<
+        { type: "text"; text: string } | { type: "image"; data: string; mimeType: string }
+      > = [
+        {
+          type: "text",
+          text: JSON.stringify(
+            { name: g.name, url: g.url, totalImages: g.images.length, images: g.images.map((i) => i[size ?? "large"]) },
+            null,
+            2,
+          ),
+        },
+      ];
+      for (const img of chosen) {
+        const { data, mimeType } = await yumi.downloadImage(img[size ?? "large"]);
+        content.push({ type: "image", data: data.toString("base64"), mimeType });
+      }
+      return { content };
+    } catch (err) {
+      return { content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+    }
+  },
+);
+
+server.registerTool(
   "find_by_sku",
   {
     title: "Товар за артикулом",

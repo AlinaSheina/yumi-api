@@ -5,6 +5,7 @@ import type {
   Cart,
   Product,
   ProductDetails,
+  ProductImage,
   ProductPage,
   RawCart,
   RawCartResponse,
@@ -133,9 +134,28 @@ export class YumiClient {
       sku: ld.sku,
       description: ld.description ? htmlToText(ld.description) : undefined,
       image: Array.isArray(ld.image) ? ld.image[0] : ld.image,
+      images: parseGallery(html),
     };
     if (details.sku) details.listing = await this.findBySku(details.sku);
     return details;
+  }
+
+  /** Product gallery by URL key / product URL or by SKU. */
+  async getProductImages(ref: { urlKey?: string; sku?: string }): Promise<{ name: string; url: string; images: ProductImage[] }> {
+    let urlKey = ref.urlKey;
+    if (!urlKey && ref.sku) {
+      const p = await this.findBySku(ref.sku);
+      if (!p) throw new Error(`SKU ${ref.sku} not found`);
+      urlKey = p.urlKey;
+    }
+    if (!urlKey) throw new Error("urlKey or sku is required");
+    const d = await this.getProduct(urlKey);
+    return { name: d.name, url: d.url, images: d.images };
+  }
+
+  /** Download a product image (only images hosted on the shop itself). */
+  async downloadImage(imageUrl: string): Promise<{ data: Buffer; mimeType: string }> {
+    return this.http.getImage(imageUrl);
   }
 
   async getCategories(): Promise<RawCategory[]> {
@@ -410,6 +430,41 @@ export class YumiClient {
 
 function toTiers(extra?: RawTierPrice[]): TierPrice[] {
   return (extra ?? []).map((t) => ({ minQty: t.qty, price: t.price }));
+}
+
+/** Extract `media: { images: [...] }` (the Vue gallery state) from a product page. */
+function parseGallery(html: string): ProductImage[] {
+  const marker = html.search(/media\s*:\s*\{\s*images\s*:\s*\[/);
+  if (marker < 0) return [];
+  const start = html.indexOf("[", marker);
+  let depth = 0;
+  let inString = false;
+  for (let i = start; i < html.length; i++) {
+    const ch = html[i];
+    if (inString) {
+      if (ch === "\\") i++;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "[") depth++;
+    else if (ch === "]" && --depth === 0) {
+      try {
+        const raw = JSON.parse(html.slice(start, i + 1)) as Array<Record<string, string>>;
+        return raw
+          .filter((r) => r.original_image_url || r.large_image_url)
+          .map((r) => ({
+            small: r.small_image_url,
+            medium: r.medium_image_url,
+            large: r.large_image_url,
+            original: r.original_image_url,
+          }));
+      } catch {
+        return [];
+      }
+    }
+  }
+  return [];
 }
 
 function htmlToText(html: string): string {

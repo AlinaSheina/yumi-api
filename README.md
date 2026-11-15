@@ -50,7 +50,8 @@ npm run test:live  # e2e-тести на живому сайті (кошик п�
 | Інструмент | Що робить |
 |---|---|
 | `search_products` | Пошук: текст, категорія, фільтри атрибутів, ціна, сортування |
-| `get_product` | Картка товару (опис + актуальні ціни й наявність) |
+| `get_product` | Картка товару (опис, галерея фото, актуальні ціни й наявність) |
+| `get_product_images` | Фото товару як зображення (асистент бачить і показує їх) + посилання на всі розміри |
 | `find_by_sku` | Товар за артикулом |
 | `list_categories` | Дерево категорій |
 | `get_category_filters` | Фільтри категорії (колір, розмір, виробник) з id опцій |
@@ -93,6 +94,8 @@ claude mcp add yumi-market -- node C:/projects/yumi-api/dist/mcp/server.js
 | GET | `/health` | Стан сервісу |
 | GET | `/catalog/products?query=&categoryId=&sort=&page=&limit=&minPrice=&maxPrice=&f.<attr>=id1,id2` | Пошук товарів |
 | GET | `/catalog/products/:urlKey` | Картка товару |
+| GET | `/catalog/products/:urlKey/images` | Галерея фото (small / medium / large / original) |
+| GET | `/catalog/products/:urlKey/image?index=0&size=large` | Саме зображення |
 | GET | `/catalog/products/sku/:sku` | Товар за артикулом |
 | GET | `/catalog/categories` | Дерево категорій |
 | GET | `/catalog/categories/:id/filters` | Фільтри категорії |

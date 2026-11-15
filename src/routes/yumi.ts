@@ -60,6 +60,30 @@ export function yumiRouter(yumi: YumiClient) {
   );
 
   r.get("/catalog/products/:urlKey", wrap((req) => yumi.getProduct(String(req.params.urlKey))));
+  r.get("/catalog/products/:urlKey/images", wrap((req) => yumi.getProductImages({ urlKey: String(req.params.urlKey) })));
+
+  // GET /catalog/products/:urlKey/image?index=0&size=large -> the image itself (proxied from the shop)
+  r.get("/catalog/products/:urlKey/image", async (req, res, next) => {
+    try {
+      const size = String(req.query.size ?? "large") as "small" | "medium" | "large" | "original";
+      if (!["small", "medium", "large", "original"].includes(size)) {
+        res.status(400).json({ error: "size must be small|medium|large|original" });
+        return;
+      }
+      const index = Number(req.query.index ?? 0);
+      const { images } = await yumi.getProductImages({ urlKey: String(req.params.urlKey) });
+      const img = images[index];
+      if (!img) {
+        res.status(404).json({ error: "No such image" });
+        return;
+      }
+      const { data, mimeType } = await yumi.downloadImage(img[size]);
+      res.type(mimeType).set("Cache-Control", "public, max-age=86400").send(data);
+    } catch (err) {
+      if (err instanceof YumiHttpError) res.status(err.status >= 500 ? 502 : err.status).json({ error: err.message });
+      else next(err);
+    }
+  });
   r.get("/catalog/categories", wrap(() => yumi.getCategoryTree()));
   r.get("/catalog/categories/:id/filters", wrap((req) => yumi.getCategoryFilters(intParam(req, "id"))));
   r.get(

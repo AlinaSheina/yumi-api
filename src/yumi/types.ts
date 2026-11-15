@@ -158,6 +158,11 @@ export interface ProductPage {
   note?: string;
 }
 
+export type ImageSize = "small" | "medium" | "large" | "original";
+
+/** One gallery image in all sizes the site provides (WebP). */
+export type ProductImage = Record<ImageSize, string>;
+
 export interface ProductDetails {
   id: number | null;
   urlKey: string;
@@ -166,6 +171,8 @@ export interface ProductDetails {
   sku?: string;
   description?: string;
   image?: string;
+  /** Full gallery from the product page. */
+  images: ProductImage[];
   /** Live listing data (price tiers, stock), found by SKU. */
   listing?: Product;
 }

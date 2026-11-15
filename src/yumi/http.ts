@@ -87,6 +87,21 @@ export class YumiHttp {
     return this.request("POST", path, { form, accept, redirect: "manual" });
   }
 
+  /** Download an image from the shop's own host (refuses other hosts). */
+  async getImage(imageUrl: string, maxBytes = 5_000_000): Promise<{ data: Buffer; mimeType: string }> {
+    const url = new URL(imageUrl, this.baseUrl);
+    if (url.origin !== new URL(this.baseUrl).origin) {
+      throw new Error(`Refusing to download images from ${url.origin}`);
+    }
+    const res = await this.throttled(() => fetch(url, { headers: { "User-Agent": this.userAgent, Accept: "image/*" } }));
+    if (!res.ok) throw new YumiHttpError(`GET ${url.pathname} failed: HTTP ${res.status}`, res.status, null);
+    const mimeType = (res.headers.get("content-type") ?? "").split(";")[0].trim();
+    if (!mimeType.startsWith("image/")) throw new Error(`Not an image: ${mimeType || "unknown type"}`);
+    const data = Buffer.from(await res.arrayBuffer());
+    if (data.length > maxBytes) throw new Error(`Image too large (${data.length} bytes)`);
+    return { data, mimeType };
+  }
+
   /** Make sure we have an XSRF-TOKEN cookie (needed for any POST/PUT/DELETE). */
   async ensureXsrf() {
     await this.load();
